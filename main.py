@@ -123,6 +123,9 @@ def analyze_data(df):
     max_phi = df['Phi [uRad]'].max()
     min_phi = df['Phi [uRad]'].min()
 
+    peak_to_valye_x = max_x - min_x
+    peak_to_valye_y = max_y - min_y
+
     # Find corresponding times for maximums and minimums
     time_max_x = df.loc[df['Delta X [um]'].idxmax(), 'Time [s]']
     time_min_x = df.loc[df['Delta X [um]'].idxmin(), 'Time [s]']
@@ -138,6 +141,8 @@ def analyze_data(df):
     print(f"Min Delta Y [um]: {min_y} at Time: {time_min_y}")
     print(f"Max Phi [uRad]: {max_phi} at Time: {time_max_phi}")
     print(f"Min Phi [uRad]: {min_phi} at Time: {time_min_phi}")
+    print(f"Peak to valey X [um]: {peak_to_valye_x}")
+    print(f"Peak to valey Y [um]: {peak_to_valye_y}")
 
     # Perform Fast Fourier Transform (FFT)
     x = df['Delta X [um]'].values
@@ -174,13 +179,13 @@ def analyze_data(df):
 
     # Plot the frequency distribution
     plt.figure(figsize=(10, 6))
-    plt.plot(FreqAxis, FreqDist, label='Frequency Distribution')
+    plt.plot(FreqAxis, np.abs(FreqDist), label='Absolute Frequency Distribution')
     plt.xlabel('Frequency (Hz)')
     plt.ylabel('Amplitude')
-    plt.title('Frequency Distribution')
-    plt.grid(True)
+    plt.title('Absolute Frequency Distribution')
+    plt.grid(True, which='both', linestyle='--', linewidth=0.5)  # Fine grid
     plt.legend()
-    plt.savefig('plot1_frequency_distribution_plot.png')
+    plt.savefig('plot1_absolute_frequency_distribution_plot.png')
     plt.show()
 
     # Plot changes over time
