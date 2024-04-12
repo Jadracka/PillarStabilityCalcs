@@ -180,7 +180,7 @@ def analyze_data(df):
     plt.title('Frequency Distribution')
     plt.grid(True)
     plt.legend()
-    plt.savefig('frequency_distribution_plot.png')
+    plt.savefig('plot1_frequency_distribution_plot.png')
     plt.show()
 
     # Plot changes over time
@@ -196,8 +196,8 @@ def analyze_data(df):
 
     # Bin the sizes of delta X and Y and plot their distribution
     plt.figure(figsize=(10, 6))
-    plt.hist(df['Delta X [um]'].values, bins=1500, alpha=1, label='Delta X', range=(min_x/8, max_x/8))
-    plt.hist(df['Delta Y [um]'].values, bins=1500, alpha=0.5, label='Delta Y', range=(min_y/8, max_y/8))
+    plt.hist(df['Delta X [um]'].values, bins=1500, alpha=1, label='Delta X', range=(min_x/5, max_x/5))
+    plt.hist(df['Delta Y [um]'].values, bins=1500, alpha=0.5, label='Delta Y', range=(min_y/5, max_y/5))
     plt.xlabel('Change')
     plt.ylabel('Frequency')
     plt.title('Distribution of Delta X and Y')
@@ -223,10 +223,6 @@ def main():
     IFM_zenithal_angles = [102.8495, 102.6638, 103.6139]
 
     # Angles for corrections in gons
-#    delta_angle = 100.3974
-#    omega_angle = 99.6872
-#    ksi_angle = -11.4865
-
     delta_angle = 100.3974
     omega_angle = -99.6872
     ksi_angle = -11.4865
@@ -235,10 +231,10 @@ def main():
     D_value = 173.588
 
     # Value of D in millimeters
- #   max_time = 2500
+    max_time = 2500
 
     # Process interferometer data
-    dfs = process_interferometer_data(IFM_files,IFM_zenithal_angles, D_value, delta_angle, omega_angle, ksi_angle)#, max_time)
+    dfs = process_interferometer_data(IFM_files,IFM_zenithal_angles, D_value, delta_angle, omega_angle, ksi_angle, max_time)
 
     analyze_data(dfs)
 
