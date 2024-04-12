@@ -1,8 +1,9 @@
 import csv
 import pandas as pd
-import math
+import math as m
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 def gon2rad(gon):
     """
@@ -18,184 +19,228 @@ def gon2rad(gon):
     float
         Angle in radians.
     """
-    return gon * (math.pi / 200)
+    return gon * (m.pi / 200)
 
-def process_interferometer_data(csv_path, zenith_angle_gon, delta_gon, omega_gon, ksi_gon, D_mm):
+def process_interferometer_data(csv_paths, zenithal_angles, D_mm, delta_angle, omega_angle, ksi_angle, max_time=None):
     """
-    Process interferometer data from a CSV file and apply corrections into the cartesian coordinate system.
+    Process interferometer data from CSV files and apply mathematical corrections.
 
     Parameters
     ----------
-    csv_path : str
-        Path to the CSV file containing interferometer data.
-    zenith_angle_gon : float
-        Zenith angle of the interferometer in gons.
-    delta_gon : float
-        Delta angle in gons.
-    omega_gon : float
-        Omega angle in gons.
-    ksi_gon : float
-        Ksi angle in gons.
-    D_mm : float
-        Value of D in millimeters.
+    csv_paths : list of str
+        List of paths to the CSV files containing interferometer data.
 
     Returns
     -------
     pandas.DataFrame
-        Processed DataFrame containing time, raw measurement, horizontal distance, cartesian coordinates, and Phi angle.
+        Processed DataFrame containing time, raw measurement, horizontal distance,
+        and other corrected data.
     """
-    # Initialize lists to store time, raw measurement, horizontal distance, cartesian coordinates, and Phi angle
+    # Initialize lists to store data
     times = []
     raw_measurements = []
+
+    # Read all CSV files simultaneously
+    with open(csv_paths[0], 'r') as file1, \
+         open(csv_paths[1], 'r') as file2, \
+         open(csv_paths[2], 'r') as file3:
+
+        reader1 = csv.reader(file1, delimiter=';')
+        reader2 = csv.reader(file2, delimiter=';')
+        reader3 = csv.reader(file3, delimiter=';')
+
+        header1 = next(reader1)  # Skip header
+        header2 = next(reader2)
+        header3 = next(reader3)
+
+        for row1, row2, row3 in zip(reader1, reader2, reader3):
+            # Extract time and raw measurement from each interferometer
+            time1, time2, time3 = float(row1[0]), float(row2[0]), float(row3[0])
+            measurement1, measurement2, measurement3 = float(row1[1]), float(row2[1]), float(row3[1])
+
+            # Check if the timing is roughly the same for all interferometers
+            if abs(time1 - time2) < 0.000001 and abs(time1 - time3) < 0.000001 and (max_time is None or time1 <= max_time):
+                times.append(time1)
+                raw_measurements.append((measurement1, measurement2, measurement3))
+
+    D = D_mm * 10**3
+    omega = gon2rad(omega_angle)
+    delta = gon2rad(delta_angle)
+    ksi = gon2rad(ksi_angle)
+
+
+    # Apply mathematical corrections and calculate cartesian coordinates
     horizontal_distances = []
-    cartesian_x = []
-    cartesian_y = []
-    phi_angles = []
+    deltas_x = []
+    deltas_y = []
+    phis = []
+    prev_measurements = [None, None, None]
 
-    # Initialize variables for previous measurement
-    prev_measurement = None
+    for i, (measurement1, measurement2, measurement3) in enumerate(raw_measurements):
+        # Apply mathematical corrections
+        horizontal_distance1 = measurement1 * m.cos(gon2rad(zenithal_angles[0]))
+        horizontal_distance2 = measurement2 * m.cos(gon2rad(zenithal_angles[1]))
+        horizontal_distance3 = measurement3 * m.cos(gon2rad(zenithal_angles[2]))
 
-    # Read CSV file line by line
-    with open(csv_path, 'r') as file:
-        reader = csv.reader(file)
-        header = next(reader)  # Skip header
-        for row in reader:
-            # Extract time and raw measurement from the row
-            time = float(row[0])
-            raw_measurement = float(row[1])
+        # Calculate cartesian coordinates
+        if None not in prev_measurements:
+            delta_x = ((horizontal_distance1 * m.sin(delta) - prev_measurements[0] * m.sin(delta)) + (horizontal_distance2 * m.sin(m.tau - omega) - prev_measurements[1] * m.sin(m.tau - omega)))/2
+            phi = ((horizontal_distance2  - prev_measurements[1] ) * m.sin(m.tau - omega) - ((horizontal_distance1 - prev_measurements[0]) * m.sin(delta)))/D
+            delta_y = m.sin(ksi) * (horizontal_distance3 - prev_measurements[2]) - (D/2 - (D * m.cos(phi))/2)
+        else:
+            delta_x = 0
+            phi = 0
+            delta_y = 0
 
-            # Apply mathematical correction
-            horizontal_distance = raw_measurement * math.cos(gon2rad(zenith_angle_gon))
+        # Append data to lists
+        horizontal_distances.append((horizontal_distance1 * 10**6, horizontal_distance2 * 10**6, horizontal_distance3 * 10**6))
+        deltas_x.append(delta_x * 10**6)
+        deltas_y.append(delta_y * 10**6)
+        phis.append(phi * 10**6)
 
-            # Calculate cartesian coordinates
-            if prev_measurement is not None:
-                delta_x = (((horizontal_distance - prev_measurement) * math.sin(gon2rad(delta_gon))) +
-                           ((horizontal_distance - prev_measurement) * math.sin(gon2rad(omega_gon)))) / 2
-                phi = ((horizontal_distance - prev_measurement) * math.sin(gon2rad(omega_gon)) - (horizontal_distance - prev_measurement) * math.sin(gon2rad(delta_gon))) / D_mm
-                delta_y = math.sin(gon2rad(ksi_gon)) * (horizontal_distance - prev_measurement) - (D_mm / 2 - (D_mm * math.cos(phi)) / 2)
-                x_coord = cartesian_x[-1] + delta_x
-                y_coord = cartesian_y[-1] + delta_y
-            else:
-                x_coord = 0  # Initial X coordinate
-                y_coord = 0  # Initial Y coordinate
-
-            # Append data to lists
-            times.append(time)
-            raw_measurements.append(raw_measurement)
-            horizontal_distances.append(horizontal_distance)
-            cartesian_x.append(x_coord)
-            cartesian_y.append(y_coord)
-            phi_angles.append(phi)
-
-            # Update previous measurement
-            prev_measurement = horizontal_distance
+        # Update previous measurements
+        prev_measurements = (horizontal_distance1, horizontal_distance2, horizontal_distance3)
 
     # Create a DataFrame from the lists
     df = pd.DataFrame({
         'Time [s]': times,
-        'Raw Measurement [mm]': raw_measurements,
-        'Horizontal Distance [mm]': horizontal_distances,
-        'Cartesian X [mm]': cartesian_x,
-        'Cartesian Y [mm]': cartesian_y,
-        'Phi [rad]': phi_angles
+        'Horizontal Distance 1 [um]': [h[0] for h in horizontal_distances],
+        'Horizontal Distance 2 [um]': [h[1] for h in horizontal_distances],
+        'Horizontal Distance 3 [um]': [h[2] for h in horizontal_distances],
+        'Delta X [um]': deltas_x,
+        'Delta Y [um]': deltas_y,
+        'Phi [uRad]': phis
     })
 
     return df
 
 def analyze_data(df):
     # Find maximums and minimums in X, Y, and Phi
-    max_x = df['Cartesian X [mm]'].max()
-    min_x = df['Cartesian X [mm]'].min()
-    max_y = df['Cartesian Y [mm]'].max()
-    min_y = df['Cartesian Y [mm]'].min()
-    max_phi = df['Phi [rad]'].max()
-    min_phi = df['Phi [rad]'].min()
+    max_x = df['Delta X [um]'].max()
+    min_x = df['Delta X [um]'].min()
+    max_y = df['Delta Y [um]'].max()
+    min_y = df['Delta Y [um]'].min()
+    max_phi = df['Phi [uRad]'].max()
+    min_phi = df['Phi [uRad]'].min()
 
     # Find corresponding times for maximums and minimums
-    time_max_x = df.loc[df['Cartesian X [mm]'].idxmax(), 'Time [s]']
-    time_min_x = df.loc[df['Cartesian X [mm]'].idxmin(), 'Time [s]']
-    time_max_y = df.loc[df['Cartesian Y [mm]'].idxmax(), 'Time [s]']
-    time_min_y = df.loc[df['Cartesian Y [mm]'].idxmin(), 'Time [s]']
-    time_max_phi = df.loc[df['Phi [rad]'].idxmax(), 'Time [s]']
-    time_min_phi = df.loc[df['Phi [rad]'].idxmin(), 'Time [s]']
+    time_max_x = df.loc[df['Delta X [um]'].idxmax(), 'Time [s]']
+    time_min_x = df.loc[df['Delta X [um]'].idxmin(), 'Time [s]']
+    time_max_y = df.loc[df['Delta Y [um]'].idxmax(), 'Time [s]']
+    time_min_y = df.loc[df['Delta Y [um]'].idxmin(), 'Time [s]']
+    time_max_phi = df.loc[df['Phi [uRad]'].idxmax(), 'Time [s]']
+    time_min_phi = df.loc[df['Phi [uRad]'].idxmin(), 'Time [s]']
 
     print("Maximums and Minimums:")
-    print(f"Max X: {max_x} at Time: {time_max_x}")
-    print(f"Min X: {min_x} at Time: {time_min_x}")
-    print(f"Max Y: {max_y} at Time: {time_max_y}")
-    print(f"Min Y: {min_y} at Time: {time_min_y}")
-    print(f"Max Phi: {max_phi} at Time: {time_max_phi}")
-    print(f"Min Phi: {min_phi} at Time: {time_min_phi}")
+    print(f"Max Delta X [um]: {max_x} at Time: {time_max_x}")
+    print(f"Min Delta X [um]: {min_x} at Time: {time_min_x}")
+    print(f"Max Delta Y [um]: {max_y} at Time: {time_max_y}")
+    print(f"Min Delta Y [um]: {min_y} at Time: {time_min_y}")
+    print(f"Max Phi [uRad]: {max_phi} at Time: {time_max_phi}")
+    print(f"Min Phi [uRad]: {min_phi} at Time: {time_min_phi}")
 
     # Perform Fast Fourier Transform (FFT)
-    fft_x = np.fft.fft(df['Cartesian X [mm]'])
-    fft_y = np.fft.fft(df['Cartesian Y [mm]'])
-    fft_phi = np.fft.fft(df['Phi [rad]'])
+    x = df['Delta X [um]'].values
+    y = df['Delta Y [um]'].values
+    Fs = 610.351562
+    # Complex values from x and y arrays
+    Complex = [x[i] + 1j * y[i] for i in range(len(x))]
 
-    # Plot FFT results
+    # Sampling frequency (Fs) in Hz
+    Fs = 610.35
+
+    # Perform FFT
+    FreqDist = np.fft.fft(Complex).real
+
+    # Take only the positive half of the frequencies
+    FreqDist = FreqDist[:len(FreqDist)//2]
+
+    # Frequency axis
+    FreqAxis = [i * 0.5 * Fs / len(FreqDist) for i in range(len(FreqDist))]
+
+    #fft_x = np.fft.rfft(df['Delta X [um]'])
+    #fft_y = np.fft.rfft(df['Delta Y [um]'])
+
+    """     # Plot FFT results
     plt.figure(figsize=(10, 6))
-    plt.subplot(3, 1, 1)
-    plt.plot(np.abs(fft_x))
-    plt.title('FFT of X')
-    plt.subplot(3, 1, 2)
-    plt.plot(np.abs(fft_y))
-    plt.title('FFT of Y')
-    plt.subplot(3, 1, 3)
-    plt.plot(np.abs(fft_phi))
-    plt.title('FFT of Phi')
-    plt.tight_layout()
+    plt.plot(np.abs(fft_x), label='Delta X')
+    plt.plot(np.abs(fft_y), label='Delta Y')
+    plt.xlabel('Frequency')
+    plt.ylabel('Amplitude')
+    plt.title('FFT of Delta X and Delta Y')
+    plt.legend()
+    plt.savefig('plot1_fft_delta_x_and_delta_y.png')
+    plt.close() """
+
+    # Plot the frequency distribution
+    plt.figure(figsize=(10, 6))
+    plt.plot(FreqAxis, FreqDist, label='Frequency Distribution')
+    plt.xlabel('Frequency (Hz)')
+    plt.ylabel('Amplitude')
+    plt.title('Frequency Distribution')
+    plt.grid(True)
+    plt.legend()
+    plt.savefig('frequency_distribution_plot.png')
     plt.show()
 
     # Plot changes over time
     plt.figure(figsize=(10, 6))
-    plt.plot(df['Time [s]'], df['Cartesian X [mm]'], label='Delta X')
-    plt.plot(df['Time [s]'], df['Cartesian Y [mm]'], label='Delta Y')
-    plt.plot(df['Time [s]'], df['Phi [rad]'], label='Phi')
+    plt.plot(df['Time [s]'].values, df['Delta X [um]'].values, label='Delta X')
+    plt.plot(df['Time [s]'].values, df['Delta Y [um]'].values, label='Delta Y')
     plt.xlabel('Time [s]')
     plt.ylabel('Change')
     plt.title('Changes Over Time')
     plt.legend()
-    plt.show()
+    plt.savefig('plot2_changes_over_time.png')
+    plt.close()
 
     # Bin the sizes of delta X and Y and plot their distribution
     plt.figure(figsize=(10, 6))
-    plt.hist(df['Cartesian X [mm]'], bins=50, alpha=0.5, label='Delta X')
-    plt.hist(df['Cartesian Y [mm]'], bins=50, alpha=0.5, label='Delta Y')
+    plt.hist(df['Delta X [um]'].values, bins=1500, alpha=1, label='Delta X', range=(min_x/8, max_x/8))
+    plt.hist(df['Delta Y [um]'].values, bins=1500, alpha=0.5, label='Delta Y', range=(min_y/8, max_y/8))
     plt.xlabel('Change')
     plt.ylabel('Frequency')
     plt.title('Distribution of Delta X and Y')
     plt.legend()
-    plt.show()
+    plt.savefig('plot3_delta_distribution.png')
+    plt.close()
+
+
 
 def main():
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir = "Data"
     # Paths to interferometer CSV files
-    interferometer1_csv = 'interferometer1_data.csv'
-    interferometer2_csv = 'interferometer2_data.csv'
-    interferometer3_csv = 'interferometer3_data.csv'
+    interferometer1_csv = '01_Channel_1.csv'
+    interferometer2_csv = '01_Channel_2.csv'
+    interferometer3_csv = '01_Channel_3.csv'
+
+    IFM_files = [os.path.join(current_dir, data_dir, interferometer1_csv), 
+                 os.path.join(current_dir, data_dir, interferometer2_csv), 
+                 os.path.join(current_dir, data_dir, interferometer3_csv)]
 
     # Zenith angles for each interferometer in gons
-    IFM1_zenithal_angle = 102.8495
-    IFM2_zenithal_angle = 102.6638
-    IFM3_zenithal_angle = 103.6139
+    IFM_zenithal_angles = [102.8495, 102.6638, 103.6139]
 
     # Angles for corrections in gons
+#    delta_angle = 100.3974
+#    omega_angle = 99.6872
+#    ksi_angle = -11.4865
+
     delta_angle = 100.3974
-    omega_angle = 99.6872
+    omega_angle = -99.6872
     ksi_angle = -11.4865
 
     # Value of D in millimeters
     D_value = 173.588
 
-    # Process and correct interferometer data
-    df1 = process_interferometer_data(interferometer1_csv, IFM1_zenithal_angle, delta_angle, omega_angle, ksi_angle, D_value)
-    df2 = process_interferometer_data(interferometer2_csv, IFM2_zenithal_angle, delta_angle, omega_angle, ksi_angle, D_value)
-    df3 = process_interferometer_data(interferometer3_csv, IFM3_zenithal_angle, delta_angle, omega_angle, ksi_angle, D_value)
+    # Value of D in millimeters
+ #   max_time = 2500
 
-    # Perform further analysis on the corrected dataframes
-    analyze_data(df1)
-    analyze_data(df2)
-    analyze_data(df3)
+    # Process interferometer data
+    dfs = process_interferometer_data(IFM_files,IFM_zenithal_angles, D_value, delta_angle, omega_angle, ksi_angle)#, max_time)
 
+    analyze_data(dfs)
 
 if __name__ == "__main__":
     main()
