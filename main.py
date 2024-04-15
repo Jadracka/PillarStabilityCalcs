@@ -5,8 +5,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 
-# New comment
-
 def gon2rad(gon):
     """
     Convert an angle from gons to radians.
