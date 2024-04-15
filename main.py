@@ -21,6 +21,7 @@ def gon2rad(gon):
     """
     return gon * (m.pi / 200)
 
+   
 def process_interferometer_data(csv_paths, zenithal_angles, D_mm, delta_angle, omega_angle, ksi_angle, max_time=None):
     """
     Process interferometer data from CSV files and apply mathematical corrections.
