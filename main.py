@@ -79,9 +79,9 @@ def process_interferometer_data(csv_paths, zenithal_angles, D_mm, delta_angle, o
 
     for i, (measurement1, measurement2, measurement3) in enumerate(raw_measurements):
         # Apply mathematical corrections
-        horizontal_distance1 = measurement1 * m.cos(gon2rad(zenithal_angles[0]))
-        horizontal_distance2 = measurement2 * m.cos(gon2rad(zenithal_angles[1]))
-        horizontal_distance3 = measurement3 * m.cos(gon2rad(zenithal_angles[2]))
+        horizontal_distance1 = measurement1 * m.sin(gon2rad(zenithal_angles[0]))
+        horizontal_distance2 = measurement2 * m.sin(gon2rad(zenithal_angles[1]))
+        horizontal_distance3 = measurement3 * m.sin(gon2rad(zenithal_angles[2]))
 
         # Calculate cartesian coordinates
         if None not in prev_measurements:
