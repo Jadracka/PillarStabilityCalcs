@@ -75,7 +75,8 @@ def process_interferometer_data(csv_paths, zenithal_angles, D_mm, delta_angle, o
     deltas_x = []
     deltas_y = []
     phis = []
-    prev_measurements = [None, None, None]
+    baseline_measurement = [None, None, None]
+
 
     for i, (measurement1, measurement2, measurement3) in enumerate(raw_measurements):
         # Apply mathematical corrections
@@ -83,24 +84,20 @@ def process_interferometer_data(csv_paths, zenithal_angles, D_mm, delta_angle, o
         horizontal_distance2 = measurement2 * m.sin(gon2rad(zenithal_angles[1]))
         horizontal_distance3 = measurement3 * m.sin(gon2rad(zenithal_angles[2]))
 
+        if None in baseline_measurement:
+            baseline_measurement = (horizontal_distance1, horizontal_distance2, horizontal_distance3)
+
         # Calculate cartesian coordinates
-        if None not in prev_measurements:
-            delta_x = ((horizontal_distance1 * m.sin(delta) - prev_measurements[0] * m.sin(delta)) + (horizontal_distance2 * m.sin(m.tau - omega) - prev_measurements[1] * m.sin(m.tau - omega)))/2
-            phi = ((horizontal_distance2  - prev_measurements[1] ) * m.sin(m.tau - omega) - ((horizontal_distance1 - prev_measurements[0]) * m.sin(delta)))/D
-            delta_y = m.sin(ksi) * (horizontal_distance3 - prev_measurements[2]) - (D/2 - (D * m.cos(phi))/2)
-        else:
-            delta_x = 0
-            phi = 0
-            delta_y = 0
+        delta_x = ((horizontal_distance1 * m.sin(delta) - baseline_measurement[0] * m.sin(delta)) + (horizontal_distance2 * m.sin(m.tau - omega) - baseline_measurement[1] * m.sin(m.tau - omega)))/2
+        phi = ((horizontal_distance2  - baseline_measurement[1] ) * m.sin(m.tau - omega) - ((horizontal_distance1 - baseline_measurement[0]) * m.sin(delta)))/D
+        delta_y = m.cos(ksi) * (horizontal_distance3 - baseline_measurement[2]) - (D/2 - (D * m.cos(phi))/2)
+
 
         # Append data to lists
         horizontal_distances.append((horizontal_distance1 * 10**6, horizontal_distance2 * 10**6, horizontal_distance3 * 10**6))
         deltas_x.append(delta_x * 10**6)
         deltas_y.append(delta_y * 10**6)
         phis.append(phi * 10**6)
-
-        # Update previous measurements
-        prev_measurements = (horizontal_distance1, horizontal_distance2, horizontal_distance3)
 
     # Create a DataFrame from the lists
     df = pd.DataFrame({
@@ -180,7 +177,7 @@ def analyze_data(df):
 
     # Plot the frequency distribution
     plt.figure(figsize=(10, 6))
-    plt.plot(FreqAxis, np.abs(FreqDist), label='Absolute Frequency Distribution')
+    plt.plot(FreqAxis[2:], np.abs(FreqDist)[2:], label='Absolute Frequency Distribution')
     plt.xlabel('Frequency (Hz)')
     plt.ylabel('Amplitude')
     plt.title('Absolute Frequency Distribution')
@@ -202,8 +199,8 @@ def analyze_data(df):
 
     # Bin the sizes of delta X and Y and plot their distribution
     plt.figure(figsize=(10, 6))
-    plt.hist(df['Delta X [um]'].values, bins=1500, alpha=1, label='Delta X', range=(min_x/5, max_x/5))
-    plt.hist(df['Delta Y [um]'].values, bins=1500, alpha=0.5, label='Delta Y', range=(min_y/5, max_y/5))
+    plt.hist(df['Delta X [um]'].values, bins=1500, alpha=1, label='Delta X')#, range=(min_x/5, max_x/5))
+    plt.hist(df['Delta Y [um]'].values, bins=1500, alpha=0.5, label='Delta Y')#, range=(min_y/5, max_y/5))
     plt.xlabel('Change')
     plt.ylabel('Frequency')
     plt.title('Distribution of Delta X and Y')
@@ -236,8 +233,8 @@ def main():
     # Value of D in millimeters
     D_value = 173.588
 
-    # Value of D in millimeters
-    max_time = 2500
+    # Maximum time in seconds
+    max_time = 2690
 
     # Process interferometer data
     dfs = process_interferometer_data(IFM_files,IFM_zenithal_angles, D_value, delta_angle, omega_angle, ksi_angle, max_time)
