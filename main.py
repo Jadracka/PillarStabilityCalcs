@@ -22,6 +22,14 @@ def gon2rad(gon):
     return gon * (m.pi / 200)
 
    
+import csv
+import pandas as pd
+import math as m
+
+def gon2rad(gon):
+    """Convert gon to radians."""
+    return gon * m.pi / 200
+
 def process_interferometer_data(csv_paths, zenithal_angles, D_mm, delta_angle, omega_angle, ksi_angle, max_time=None):
     """
     Process interferometer data from CSV files and apply mathematical corrections.
@@ -41,43 +49,61 @@ def process_interferometer_data(csv_paths, zenithal_angles, D_mm, delta_angle, o
     times = []
     raw_measurements = []
 
-    # Read all CSV files simultaneously
-    with open(csv_paths[0], 'r') as file1, \
-         open(csv_paths[1], 'r') as file2, \
-         open(csv_paths[2], 'r') as file3:
+    if len(csv_paths) == 1:
+        # Reading from a single file with all data combined
+        with open(csv_paths[0], 'r') as file:
+            reader = csv.reader(file, delimiter=';')
+            headers = next(reader)  # Skip header
 
-        reader1 = csv.reader(file1, delimiter=';')
-        reader2 = csv.reader(file2, delimiter=';')
-        reader3 = csv.reader(file3, delimiter=';')
+            for row in reader:
+                # Extract time and raw measurement from each channel
+                time = float(row[0])
+                measurement1 = float(row[1])
+                measurement2 = float(row[2])
+                measurement3 = float(row[3])
 
-        header1 = next(reader1)  # Skip header
-        header2 = next(reader2)
-        header3 = next(reader3)
+                # Check if the timing is within the max_time
+                if max_time is None or time <= max_time:
+                    times.append(time)
+                    raw_measurements.append((measurement1, measurement2, measurement3))
+    else:
+        # Reading from three separate files
+        with open(csv_paths[0], 'r') as file1, \
+             open(csv_paths[1], 'r') as file2, \
+             open(csv_paths[2], 'r') as file3:
 
-        for row1, row2, row3 in zip(reader1, reader2, reader3):
-            # Extract time and raw measurement from each interferometer
-            time1, time2, time3 = float(row1[0]), float(row2[0]), float(row3[0])
-            measurement1, measurement2, measurement3 = float(row1[1]), float(row2[1]), float(row3[1])
+            reader1 = csv.reader(file1, delimiter=';')
+            reader2 = csv.reader(file2, delimiter=';')
+            reader3 = csv.reader(file3, delimiter=';')
 
-            # Check if the timing is roughly the same for all interferometers
-            if abs(time1 - time2) < 0.000001 and abs(time1 - time3) < 0.000001 and (max_time is None or time1 <= max_time):
-                times.append(time1)
-                raw_measurements.append((measurement1, measurement2, measurement3))
+            header1 = next(reader1)  # Skip header
+            header2 = next(reader2)
+            header3 = next(reader3)
 
+            for row1, row2, row3 in zip(reader1, reader2, reader3):
+                # Extract time and raw measurement from each interferometer
+                time1, time2, time3 = float(row1[0]), float(row2[0]), float(row3[0])
+                measurement1, measurement2, measurement3 = float(row1[1]), float(row2[1]), float(row3[1])
+
+                # Check if the timing is roughly the same for all interferometers
+                if abs(time1 - time2) < 0.000001 and abs(time1 - time3) < 0.000001 and (max_time is None or time1 <= max_time):
+                    times.append(time1)
+                    raw_measurements.append((measurement1, measurement2, measurement3))
+
+    # Conversion and correction parameters
     D = D_mm * 10**3
     omega = gon2rad(omega_angle)
     delta = gon2rad(delta_angle)
     ksi = gon2rad(ksi_angle)
 
-
-    # Apply mathematical corrections and calculate cartesian coordinates
+    # Initialize lists for corrected data
     horizontal_distances = []
     deltas_x = []
     deltas_y = []
     phis = []
     baseline_measurement = [None, None, None]
 
-
+    # Process each measurement
     for i, (measurement1, measurement2, measurement3) in enumerate(raw_measurements):
         # Apply mathematical corrections
         horizontal_distance1 = measurement1 * m.sin(gon2rad(zenithal_angles[0]))
@@ -88,10 +114,11 @@ def process_interferometer_data(csv_paths, zenithal_angles, D_mm, delta_angle, o
             baseline_measurement = (horizontal_distance1, horizontal_distance2, horizontal_distance3)
 
         # Calculate cartesian coordinates
-        delta_x = ((horizontal_distance1 * m.sin(delta) - baseline_measurement[0] * m.sin(delta)) + (horizontal_distance2 * m.sin(m.tau - omega) - baseline_measurement[1] * m.sin(m.tau - omega)))/2
-        phi = ((horizontal_distance2  - baseline_measurement[1] ) * m.sin(m.tau - omega) - ((horizontal_distance1 - baseline_measurement[0]) * m.sin(delta)))/D
-        delta_y = m.cos(ksi) * (horizontal_distance3 - baseline_measurement[2]) - (D/2 - (D * m.cos(phi))/2)
-
+        delta_x = ((horizontal_distance1 * m.sin(delta) - baseline_measurement[0] * m.sin(delta)) + 
+                   (horizontal_distance2 * m.sin(m.tau - omega) - baseline_measurement[1] * m.sin(m.tau - omega))) / 2
+        phi = ((horizontal_distance2 - baseline_measurement[1]) * m.sin(m.tau - omega) - 
+               ((horizontal_distance1 - baseline_measurement[0]) * m.sin(delta))) / D
+        delta_y = m.cos(ksi) * (horizontal_distance3 - baseline_measurement[2]) - (D / 2 - (D * m.cos(phi)) / 2)
 
         # Append data to lists
         horizontal_distances.append((horizontal_distance1 * 10**6, horizontal_distance2 * 10**6, horizontal_distance3 * 10**6))
@@ -111,6 +138,7 @@ def process_interferometer_data(csv_paths, zenithal_angles, D_mm, delta_angle, o
     })
 
     return df
+
 
 def analyze_data(df):
     # Find maximums and minimums in X, Y, and Phi
@@ -210,7 +238,7 @@ def analyze_data(df):
 
 
 
-def main():
+def main_old():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     data_dir = "Data"
     # Paths to interferometer CSV files
@@ -240,6 +268,31 @@ def main():
     dfs = process_interferometer_data(IFM_files,IFM_zenithal_angles, D_value, delta_angle, omega_angle, ksi_angle, max_time)
 
     analyze_data(dfs)
+
+def main():
+    # Paths to interferometer CSV files
+
+    IFM_files = ['V:/Projekte/PETRA4/Pillar stability Tests/06Aug24 Instrument Stand Prototype 0 - LT_Arm_Seismo/Channels.csv']
+
+    # Zenith angles for each interferometer in gons
+    IFM_zenithal_angles = [100.4608, 104.6191, 104.6092]
+
+    # Angles for corrections in gons
+    delta_angle = -107.5968
+    omega_angle = 98.1402
+    ksi_angle = -3.6112
+
+    # Value of D in millimeters
+    D_value = 144.0975
+
+    # Maximum time in seconds
+    max_time = 15400
+
+    # Process interferometer data
+    dfs = process_interferometer_data(IFM_files,IFM_zenithal_angles, D_value, delta_angle, omega_angle, ksi_angle, max_time)
+
+    analyze_data(dfs)
+
 
 if __name__ == "__main__":
     main()
