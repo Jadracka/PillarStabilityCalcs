@@ -4,6 +4,7 @@ import math as m
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+from scipy.signal import welch, butter, filtfilt
 
 def gon2rad(gon):
     """
@@ -21,16 +22,7 @@ def gon2rad(gon):
     """
     return gon * (m.pi / 200)
 
-   
-import csv
-import pandas as pd
-import math as m
-
-def gon2rad(gon):
-    """Convert gon to radians."""
-    return gon * m.pi / 200
-
-def process_interferometer_data(csv_paths, zenithal_angles, D_mm, delta_angle, omega_angle, ksi_angle, max_time=None):
+def process_interferometer_data(csv_paths, zenithal_angles, D_mm, delta_angle, omega_angle, ksi_angle, channel_mapping, max_time=None, min_time=None):
     """
     Process interferometer data from CSV files and apply mathematical corrections.
 
@@ -38,16 +30,40 @@ def process_interferometer_data(csv_paths, zenithal_angles, D_mm, delta_angle, o
     ----------
     csv_paths : list of str
         List of paths to the CSV files containing interferometer data.
+    zenithal_angles : list of float
+        Zenithal angles for each interferometer in gons.
+    D_mm : float
+        Distance value in millimeters.
+    delta_angle : float
+        Correction angle delta in gons.
+    omega_angle : float
+        Correction angle omega in gons.
+    ksi_angle : float
+        Correction angle ksi in gons.
+    channel_mapping : dict
+        A dictionary defining the mapping from channels to horizontal distances.
+    max_time : float, optional
+        Maximum time in seconds to consider for the analysis.
+    min_time : float, optional
+        Minimum time in seconds to consider for the analysis (default is 7200).
 
     Returns
     -------
     pandas.DataFrame
         Processed DataFrame containing time, raw measurement, horizontal distance,
         and other corrected data.
+    dict
+        Dictionary containing the maximum values for time and each measurement.
     """
     # Initialize lists to store data
     times = []
     raw_measurements = []
+
+    # Initialize variables to track maximum values
+    max_time_val = float('-inf')
+    max_measurement1 = float('-inf')
+    max_measurement2 = float('-inf')
+    max_measurement3 = float('-inf')
 
     if len(csv_paths) == 1:
         # Reading from a single file with all data combined
@@ -56,14 +72,20 @@ def process_interferometer_data(csv_paths, zenithal_angles, D_mm, delta_angle, o
             headers = next(reader)  # Skip header
 
             for row in reader:
-                # Extract time and raw measurement from each channel
+                # Extract time and raw measurement from each channel using the mapping
                 time = float(row[0])
-                measurement1 = float(row[1])
-                measurement2 = float(row[2])
-                measurement3 = float(row[3])
+                measurement1 = float(row[channel_mapping['Horizontal Distance 1']])  # Use mapping for Horizontal Distance 1
+                measurement2 = float(row[channel_mapping['Horizontal Distance 2']])  # Use mapping for Horizontal Distance 2
+                measurement3 = float(row[channel_mapping['Horizontal Distance 3']])  # Use mapping for Horizontal Distance 3
 
-                # Check if the timing is within the max_time
-                if max_time is None or time <= max_time:
+                # Check if the time is within the specified range
+                if (min_time is None or time >= min_time) and (max_time is None or time <= max_time):
+                    # Update maximum values
+                    max_time_val = max(max_time_val, time)
+                    max_measurement1 = max(max_measurement1, measurement1)
+                    max_measurement2 = max(max_measurement2, measurement2)
+                    max_measurement3 = max(max_measurement3, measurement3)
+
                     times.append(time)
                     raw_measurements.append((measurement1, measurement2, measurement3))
     else:
@@ -83,12 +105,22 @@ def process_interferometer_data(csv_paths, zenithal_angles, D_mm, delta_angle, o
             for row1, row2, row3 in zip(reader1, reader2, reader3):
                 # Extract time and raw measurement from each interferometer
                 time1, time2, time3 = float(row1[0]), float(row2[0]), float(row3[0])
-                measurement1, measurement2, measurement3 = float(row1[1]), float(row2[1]), float(row3[1])
+                measurement1 = float(row1[channel_mapping['Horizontal Distance 1']])
+                measurement2 = float(row2[channel_mapping['Horizontal Distance 2']])
+                measurement3 = float(row3[channel_mapping['Horizontal Distance 3']])
 
-                # Check if the timing is roughly the same for all interferometers
-                if abs(time1 - time2) < 0.000001 and abs(time1 - time3) < 0.000001 and (max_time is None or time1 <= max_time):
-                    times.append(time1)
-                    raw_measurements.append((measurement1, measurement2, measurement3))
+                # Check if the time is within the specified range
+                if all((min_time is None or t >= min_time) and (max_time is None or t <= max_time) for t in (time1, time2, time3)):
+                    # Update maximum values
+                    max_time_val = max(max_time_val, time1, time2, time3)
+                    max_measurement1 = max(max_measurement1, measurement1)
+                    max_measurement2 = max(max_measurement2, measurement2)
+                    max_measurement3 = max(max_measurement3, measurement3)
+
+                    # Check if the timing is roughly the same for all interferometers
+                    if abs(time1 - time2) < 0.000001 and abs(time1 - time3) < 0.000001:
+                        times.append(time1)
+                        raw_measurements.append((measurement1, measurement2, measurement3))
 
     # Conversion and correction parameters
     D = D_mm * 10**3
@@ -123,7 +155,7 @@ def process_interferometer_data(csv_paths, zenithal_angles, D_mm, delta_angle, o
         # Append data to lists
         horizontal_distances.append((horizontal_distance1 * 10**6, horizontal_distance2 * 10**6, horizontal_distance3 * 10**6))
         deltas_x.append(delta_x * 10**6)
-        deltas_y.append(delta_y * 10**6)
+        deltas_y.append(delta_y * -10**6)
         phis.append(phi * 10**6)
 
     # Create a DataFrame from the lists
@@ -137,8 +169,15 @@ def process_interferometer_data(csv_paths, zenithal_angles, D_mm, delta_angle, o
         'Phi [uRad]': phis
     })
 
-    return df
+    # Dictionary of maximum values
+    max_values = {
+        'Max Time': max_time_val,
+        'Max Channel 1 - Position': max_measurement1,
+        'Max Channel 2 - Position': max_measurement2,
+        'Max Channel 3 - Position': max_measurement3
+    }
 
+    return df, max_values
 
 def analyze_data(df):
     # Find maximums and minimums in X, Y, and Phi
@@ -203,16 +242,16 @@ def analyze_data(df):
     plt.savefig('plot1_fft_delta_x_and_delta_y.png')
     plt.close() """
 
-    # Plot the frequency distribution
+    # Plot the frequency distribution with a logarithmic scale on the y-axis
     plt.figure(figsize=(10, 6))
-    plt.plot(FreqAxis[2:], np.abs(FreqDist)[2:], label='Absolute Frequency Distribution')
+    plt.semilogy(FreqAxis[2:], np.abs(FreqDist)[2:], label='Absolute Frequency Distribution')  # Log scale on y-axis
     plt.xlabel('Frequency (Hz)')
-    plt.ylabel('Amplitude')
-    plt.title('Absolute Frequency Distribution')
+    plt.ylabel('Amplitude (log scale)')
+    plt.title('Absolute Frequency Distribution with Logarithmic Y-Axis')
     plt.grid(True, which='both', linestyle='--', linewidth=0.5)  # Fine grid
     plt.legend()
-    plt.savefig('plot1_absolute_frequency_distribution_plot.png')
-    plt.show()
+    plt.savefig('plot1_absolute_frequency_distribution_plot_logy.png')
+    #plt.show()
 
     # Plot changes over time
     plt.figure(figsize=(10, 6))
@@ -235,8 +274,6 @@ def analyze_data(df):
     plt.legend()
     plt.savefig('plot3_delta_distribution.png')
     plt.close()
-
-
 
 def main_old():
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -269,30 +306,178 @@ def main_old():
 
     analyze_data(dfs)
 
+def compute_psd(data, sampling_rate, column_name):
+    """
+    Compute the Power Spectral Density (PSD) of a data column.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        The DataFrame containing the time series data.
+    sampling_rate : float
+        The sampling rate in Hz (samples per second).
+    column_name : str
+        The column name for which to compute the PSD.
+
+    Returns
+    -------
+    f : ndarray
+        Array of sample frequencies.
+    Pxx : ndarray
+        Power spectral density of the data.
+    """
+    # Extract the data series for PSD calculation
+    signal = data[column_name].values
+
+    # Compute the PSD using Welch's method
+    f, Pxx = welch(signal, fs=sampling_rate, nperseg=1024)
+
+    return f, Pxx
+
+def plot_psd(f, Pxx, column_name):
+    """
+    Plot the Power Spectral Density (PSD).
+
+    Parameters
+    ----------
+    f : ndarray
+        Array of sample frequencies.
+    Pxx : ndarray
+        Power spectral density of the data.
+    column_name : str
+        The column name for which the PSD is plotted.
+    """
+    plt.figure(figsize=(8, 6))
+    plt.semilogy(f, Pxx)  # Logarithmic scale for the y-axis
+    plt.title(f"Power Spectral Density (PSD) of {column_name}")
+    plt.xlabel('Frequency [Hz]')
+    plt.ylabel('Power Spectral Density [V^2/Hz]')
+    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+    #plt.show()
+
+def plot_psd_multiple(f1, Pxx1, f2, Pxx2, label1, label2):
+    """
+    Plot the Power Spectral Density (PSD) for two data columns.
+
+    Parameters
+    ----------
+    f1 : ndarray
+        Array of sample frequencies for the first data series.
+    Pxx1 : ndarray
+        Power spectral density of the first data series.
+    f2 : ndarray
+        Array of sample frequencies for the second data series.
+    Pxx2 : ndarray
+        Power spectral density of the second data series.
+    label1 : str
+        Label for the first data series.
+    label2 : str
+        Label for the second data series.
+    """
+    plt.figure(figsize=(8, 6))
+    plt.semilogy(f1, Pxx1, label=label1)  # Logarithmic scale for the y-axis
+    plt.semilogy(f2, Pxx2, label=label2)  # Logarithmic scale for the y-axis
+    plt.title(f"Power Spectral Density (PSD)")
+    plt.xlabel('Frequency [Hz]')
+    plt.ylabel('Power Spectral Density [V^2/Hz]')
+    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+    plt.legend()
+    plt.savefig('plot4_PSD_XY.png')
+    #plt.show()
+
+def plot_psd_combined(f_x, Pxx_x, f_y, Pxx_y):
+    """
+    Plot the Power Spectral Density (PSD) for Delta X and Delta Y on the same plot.
+
+    Parameters
+    ----------
+    f_x : ndarray
+        Array of sample frequencies for Delta X.
+    Pxx_x : ndarray
+        Power spectral density of Delta X.
+    f_y : ndarray
+        Array of sample frequencies for Delta Y.
+    Pxx_y : ndarray
+        Power spectral density of Delta Y.
+    """
+    plt.figure(figsize=(8, 6))
+    plt.semilogy(f_x, Pxx_x, label='Filtered Delta X [um]')  # Logarithmic scale for y-axis
+    plt.semilogy(f_y, Pxx_y, label='Filtered Delta Y [um]')  # Logarithmic scale for y-axis
+    plt.title("Power Spectral Density (PSD) of Filtered Delta X and Delta Y")
+    plt.xlabel('Frequency [Hz]')
+    plt.ylabel('Power Spectral Density [V^2/Hz]')
+    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+    plt.legend()
+    plt.savefig('plot5_PSD_HighFilter.png')
+    plt.show()
+
+def plot_horizontal_distance(data, time_column, distance_column, title):
+    """
+    Plot the horizontal distance over time.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        The DataFrame containing the time series data.
+    time_column : str
+        The column name for the time data.
+    distance_column : str
+        The column name for the horizontal distance data.
+    title : str
+        Title of the plot.
+    """
+    plt.figure(figsize=(10, 6))
+    plt.plot(data[time_column].to_numpy(), data[distance_column].to_numpy(), label=distance_column)
+    plt.title(title)
+    plt.xlabel('Time [s]')
+    plt.ylabel('Horizontal Distance [um]')
+    plt.grid(True)
+    plt.legend()
+    plt.savefig('plot6_horizontal_dist3_raw.png')
+    plt.show()
+
 def main():
     # Paths to interferometer CSV files
-
-    IFM_files = ['V:/Projekte/PETRA4/Pillar stability Tests/06Aug24 Instrument Stand Prototype 0 - LT_Arm_Seismo/Channels.csv']
+    IFM_files = ['V:/Projekte/PETRA4/Pillar stability Tests/06Aug24 Instrument Stand Prototype 0 - LT_Arm_Seismo/Channels_300.csv']
 
     # Zenith angles for each interferometer in gons
     IFM_zenithal_angles = [100.4608, 104.6191, 104.6092]
 
     # Angles for corrections in gons
-    delta_angle = -107.5968
-    omega_angle = 98.1402
+    delta_angle = 107.5968
+    omega_angle = -98.1402
     ksi_angle = -3.6112
 
     # Value of D in millimeters
     D_value = 144.0975
 
-    # Maximum time in seconds
-    max_time = 15400
+    channel_mapping = {
+    'Horizontal Distance 1': 2,  # Channel 2 for Horizontal Distance 1
+    'Horizontal Distance 2': 3,  # Channel 3 for Horizontal Distance 2
+    'Horizontal Distance 3': 1   # Channel 1 for Horizontal Distance 3
+    }
 
     # Process interferometer data
-    dfs = process_interferometer_data(IFM_files,IFM_zenithal_angles, D_value, delta_angle, omega_angle, ksi_angle, max_time)
+    df, max_values = process_interferometer_data(
+    IFM_files,
+    IFM_zenithal_angles,
+    D_value,
+    delta_angle,
+    omega_angle,
+    ksi_angle,
+    channel_mapping,
+    max_time=10000,
+    min_time=9000  # Default of 2 hours, adjust if needed
+    )
 
-    analyze_data(dfs)
+    analyze_data(df)
+    #print("Processed DataFrame (first few rows):")
+    #print(df.head(10))
+    #print("\nMaximum Values:")
+    #print(max_values)
 
+    # Plot raw data for "Horizontal Distance 3"
+    #plot_horizontal_distance(df, 'Time [s]', 'Horizontal Distance 3 [um]', 'Raw Horizontal Distance 3 (Channel 1)')
 
 if __name__ == "__main__":
     main()
