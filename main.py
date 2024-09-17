@@ -287,6 +287,12 @@ def main_old():
                  os.path.join(current_dir, data_dir, interferometer2_csv), 
                  os.path.join(current_dir, data_dir, interferometer3_csv)]
 
+    channel_mapping = {
+    'Horizontal Distance 1': 1,  # Channel 2 for Horizontal Distance 1
+    'Horizontal Distance 2': 2,  # Channel 3 for Horizontal Distance 2
+    'Horizontal Distance 3': 3   # Channel 1 for Horizontal Distance 3
+    }
+
     # Zenith angles for each interferometer in gons
     IFM_zenithal_angles = [102.8495, 102.6638, 103.6139]
 
@@ -305,6 +311,22 @@ def main_old():
     dfs = process_interferometer_data(IFM_files,IFM_zenithal_angles, D_value, delta_angle, omega_angle, ksi_angle, max_time)
 
     analyze_data(dfs)
+
+
+        # Process interferometer data
+    df, max_values = process_interferometer_data(
+    IFM_files,
+    IFM_zenithal_angles,
+    D_value,
+    delta_angle,
+    omega_angle,
+    ksi_angle,
+    channel_mapping,
+    max_time=10000,
+    min_time=9000  # Default of 2 hours, adjust if needed
+    )
+
+    analyze_data(df)
 
 def compute_psd(data, sampling_rate, column_name):
     """
@@ -466,8 +488,8 @@ def main():
     omega_angle,
     ksi_angle,
     channel_mapping,
-    max_time=10000,
-    min_time=9000  # Default of 2 hours, adjust if needed
+    max_time=15400,
+    #min_time=9000  # Default of 2 hours, adjust if needed
     )
 
     analyze_data(df)
